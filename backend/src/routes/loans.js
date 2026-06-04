@@ -1,16 +1,26 @@
 import { Router } from 'express';
 import { query, getClient } from '../db.js';
+import { requireAuth } from '../auth.js';
 
 const router = Router();
 
 const LOAN_PERIOD_DAYS = 14;
 
+// Every loan endpoint requires authentication.
+router.use(requireAuth);
+
 // GET /api/loans?status=borrowed|returned&overdue=true
+// Members only see their own loans; librarians see all.
 router.get('/', async (req, res, next) => {
   try {
     const { status, overdue } = req.query;
     const clauses = [];
     const params = [];
+
+    if (req.user.role === 'member') {
+      params.push(req.user.member_id);
+      clauses.push(`l.member_id = $${params.length}`);
+    }
 
     if (status) {
       params.push(status);
@@ -38,11 +48,25 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-// POST /api/loans  { book_id, member_id }  -> borrow a book
+// POST /api/loans  { book_id, member_id? }  -> borrow a book
+// Members borrow for themselves; librarians may borrow on behalf of a member.
 router.post('/', async (req, res, next) => {
-  const { book_id, member_id } = req.body;
-  if (!book_id || !member_id) {
-    return res.status(400).json({ error: 'book_id and member_id are required' });
+  const { book_id } = req.body;
+  if (!book_id) {
+    return res.status(400).json({ error: 'book_id is required' });
+  }
+
+  let member_id;
+  if (req.user.role === 'member') {
+    member_id = req.user.member_id;
+    if (!member_id) {
+      return res.status(400).json({ error: 'Your account is not linked to a library member' });
+    }
+  } else {
+    member_id = req.body.member_id;
+    if (!member_id) {
+      return res.status(400).json({ error: 'member_id is required when borrowing on behalf of a member' });
+    }
   }
 
   const client = await getClient();
@@ -91,6 +115,7 @@ router.post('/', async (req, res, next) => {
 });
 
 // POST /api/loans/:id/return -> return a borrowed book
+// Members may only return their own loans; librarians may return any.
 router.post('/:id/return', async (req, res, next) => {
   const client = await getClient();
   try {
@@ -103,6 +128,10 @@ router.post('/:id/return', async (req, res, next) => {
     if (!loanRes.rows.length) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Loan not found' });
+    }
+    if (req.user.role === 'member' && loanRes.rows[0].member_id !== req.user.member_id) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'You can only return your own loans' });
     }
     if (loanRes.rows[0].status === 'returned') {
       await client.query('ROLLBACK');

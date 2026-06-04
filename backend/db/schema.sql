@@ -1,6 +1,7 @@
 -- Book Lending System - Database schema (PostgreSQL)
 
 DROP TABLE IF EXISTS loans CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
 DROP TABLE IF EXISTS books CASCADE;
 DROP TABLE IF EXISTS members CASCADE;
 
@@ -26,6 +27,17 @@ CREATE TABLE members (
     phone       VARCHAR(30),
     joined_at   DATE NOT NULL DEFAULT CURRENT_DATE,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE users (
+    id            SERIAL PRIMARY KEY,
+    name          VARCHAR(255) NOT NULL,
+    email         VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    role          VARCHAR(20) NOT NULL DEFAULT 'member'
+                  CHECK (role IN ('member', 'librarian')),
+    member_id     INTEGER REFERENCES members(id) ON DELETE SET NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE loans (

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { query } from '../db.js';
+import { requireRole } from '../auth.js';
 
 const router = Router();
 
@@ -53,8 +54,8 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-// POST /api/books
-router.post('/', async (req, res, next) => {
+// POST /api/books (librarian only)
+router.post('/', requireRole('librarian'), async (req, res, next) => {
   try {
     const {
       title, author, isbn, category, description,

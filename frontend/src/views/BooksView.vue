@@ -16,6 +16,12 @@
       </select>
     </div>
 
+    <p v-if="!auth.isAuthenticated.value" class="login-hint">
+      You are browsing as a guest.
+      <router-link to="/login" style="color: var(--primary); font-weight: 600">Sign in</router-link>
+      to borrow books.
+    </p>
+
     <p v-if="error" class="error">{{ error }}</p>
     <p v-if="loading" class="muted">Loading...</p>
 
@@ -36,22 +42,37 @@
           >
             {{ book.available_copies }} / {{ book.total_copies }} available
           </span>
+
+          <!-- Guest: cannot borrow, prompted to log in -->
           <button
-            :disabled="book.available_copies < 1"
+            v-if="!auth.isAuthenticated.value"
+            class="secondary"
             style="margin-top: 8px"
-            @click="openBorrow(book)"
+            @click="goLogin"
           >
-            {{ book.available_copies > 0 ? 'Borrow' : 'Unavailable' }}
+            Sign in to borrow
+          </button>
+
+          <!-- Authenticated member/librarian -->
+          <button
+            v-else
+            :disabled="book.available_copies < 1 || borrowingId === book.id"
+            style="margin-top: 8px"
+            @click="onBorrowClick(book)"
+          >
+            <template v-if="book.available_copies < 1">Unavailable</template>
+            <template v-else-if="borrowingId === book.id">Borrowing...</template>
+            <template v-else>Borrow</template>
           </button>
         </div>
       </div>
     </div>
 
     <BorrowModal
-      v-if="borrowBook"
-      :book="borrowBook"
+      v-if="modalBook"
+      :book="modalBook"
       :members="members"
-      @close="borrowBook = null"
+      @close="modalBook = null"
       @borrowed="onBorrowed"
     />
   </div>
@@ -59,9 +80,12 @@
 
 <script setup>
 import { ref, onMounted } from 'vue';
-import { getBooks, getCategories, getMembers } from '../api';
+import { useRouter } from 'vue-router';
+import { getBooks, getCategories, getMembers, borrowBook } from '../api';
+import { auth } from '../store/auth';
 import BorrowModal from '../components/BorrowModal.vue';
 
+const router = useRouter();
 const books = ref([]);
 const categories = ref([]);
 const members = ref([]);
@@ -69,11 +93,16 @@ const search = ref('');
 const category = ref('');
 const loading = ref(false);
 const error = ref('');
-const borrowBook = ref(null);
+const modalBook = ref(null);
+const borrowingId = ref(null);
 let timer = null;
 
 function coverStyle(book) {
   return book.cover_url ? { backgroundImage: `url(${book.cover_url})` } : {};
+}
+
+function goLogin() {
+  router.push('/login');
 }
 
 async function load() {
@@ -96,19 +125,36 @@ function debouncedLoad() {
   timer = setTimeout(load, 300);
 }
 
-function openBorrow(book) {
-  borrowBook.value = book;
+// Members borrow for themselves directly; librarians pick a member via modal.
+async function onBorrowClick(book) {
+  if (auth.isLibrarian.value) {
+    modalBook.value = book;
+    return;
+  }
+  borrowingId.value = book.id;
+  error.value = '';
+  try {
+    await borrowBook({ book_id: book.id });
+    await load();
+  } catch (e) {
+    error.value = e?.response?.data?.error || 'Failed to borrow book';
+  } finally {
+    borrowingId.value = null;
+  }
 }
 
 function onBorrowed() {
-  borrowBook.value = null;
+  modalBook.value = null;
   load();
 }
 
 onMounted(async () => {
   await load();
   try {
-    [categories.value, members.value] = await Promise.all([getCategories(), getMembers()]);
+    categories.value = await getCategories();
+    if (auth.isLibrarian.value) {
+      members.value = await getMembers();
+    }
   } catch {
     // non-fatal
   }

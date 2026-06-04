@@ -31,6 +31,12 @@ INSERT INTO loans (book_id, member_id, borrowed_at, due_date, returned_at, statu
 (12, 5, now() - interval '8 days',  (CURRENT_DATE + 6),  NULL, 'borrowed'),
 (12, 1, now() - interval '3 days',  (CURRENT_DATE + 11), NULL, 'borrowed');
 
+-- Seed users for login. Password for all seed users is: password123
+-- (bcrypt hash below). 'member' user is linked to member John Carter (id 5).
+INSERT INTO users (name, email, password_hash, role, member_id) VALUES
+('Library Admin', 'librarian@example.com', '$2b$10$S8TELDmsTT/0GWnIcUBijOIGHGBX5BzCXUGtlBahLLpw8Arl/BJJW', 'librarian', NULL),
+('John Carter', 'john@example.com', '$2b$10$S8TELDmsTT/0GWnIcUBijOIGHGBX5BzCXUGtlBahLLpw8Arl/BJJW', 'member', 5);
+
 -- Returned loans (history)
 INSERT INTO loans (book_id, member_id, borrowed_at, due_date, returned_at, status) VALUES
 (1, 2, now() - interval '40 days', (CURRENT_DATE - 26), now() - interval '28 days', 'returned'),

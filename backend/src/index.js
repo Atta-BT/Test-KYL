@@ -3,9 +3,11 @@ import cors from 'cors';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
 
+import authRouter from './routes/auth.js';
 import booksRouter from './routes/books.js';
 import membersRouter from './routes/members.js';
 import loansRouter from './routes/loans.js';
+import { attachUser } from './auth.js';
 
 dotenv.config();
 
@@ -15,11 +17,13 @@ const PORT = Number(process.env.PORT) || 3000;
 app.use(cors());
 app.use(express.json());
 app.use(morgan('dev'));
+app.use(attachUser);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', service: 'book-lending-api' });
 });
 
+app.use('/api/auth', authRouter);
 app.use('/api/books', booksRouter);
 app.use('/api/members', membersRouter);
 app.use('/api/loans', loansRouter);

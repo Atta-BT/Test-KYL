@@ -1,7 +1,11 @@
 import { Router } from 'express';
 import { query } from '../db.js';
+import { requireRole } from '../auth.js';
 
 const router = Router();
+
+// All member management is restricted to librarians.
+router.use(requireRole('librarian'));
 
 // GET /api/members
 router.get('/', async (_req, res, next) => {
