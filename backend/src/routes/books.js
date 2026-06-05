@@ -13,16 +13,24 @@ router.get('/', async (req, res, next) => {
 
     if (search) {
       params.push(`%${search}%`);
-      clauses.push(`(title ILIKE $${params.length} OR author ILIKE $${params.length})`);
+      clauses.push(`(b.title ILIKE $${params.length} OR b.author ILIKE $${params.length})`);
     }
     if (category) {
       params.push(category);
-      clauses.push(`category = $${params.length}`);
+      clauses.push(`c.name = $${params.length}`);
     }
 
     const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
     const { rows } = await query(
-      `SELECT * FROM books ${where} ORDER BY title ASC`,
+      `SELECT b.*, c.name AS category_name,
+        COUNT(DISTINCT bc.copy_id) FILTER (WHERE bc.status = 'AVAILABLE') AS available_copies,
+        COUNT(DISTINCT bc.copy_id) AS total_copies
+       FROM books b
+       LEFT JOIN categories c ON c.category_id = b.category_id
+       LEFT JOIN book_copies bc ON bc.book_id = b.book_id
+       ${where}
+       GROUP BY b.book_id, c.name
+       ORDER BY b.title ASC`,
       params,
     );
     res.json(rows);
@@ -31,13 +39,13 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-// GET /api/books/categories - distinct categories
+// GET /api/books/categories
 router.get('/categories', async (_req, res, next) => {
   try {
     const { rows } = await query(
-      `SELECT DISTINCT category FROM books WHERE category IS NOT NULL ORDER BY category`,
+      `SELECT category_id, name FROM categories ORDER BY name`,
     );
-    res.json(rows.map((r) => r.category));
+    res.json(rows);
   } catch (err) {
     next(err);
   }
@@ -46,7 +54,17 @@ router.get('/categories', async (_req, res, next) => {
 // GET /api/books/:id
 router.get('/:id', async (req, res, next) => {
   try {
-    const { rows } = await query('SELECT * FROM books WHERE id = $1', [req.params.id]);
+    const { rows } = await query(
+      `SELECT b.*, c.name AS category_name,
+        COUNT(DISTINCT bc.copy_id) FILTER (WHERE bc.status = 'AVAILABLE') AS available_copies,
+        COUNT(DISTINCT bc.copy_id) AS total_copies
+       FROM books b
+       LEFT JOIN categories c ON c.category_id = b.category_id
+       LEFT JOIN book_copies bc ON bc.book_id = b.book_id
+       WHERE b.book_id = $1
+       GROUP BY b.book_id, c.name`,
+      [req.params.id],
+    );
     if (!rows.length) return res.status(404).json({ error: 'Book not found' });
     res.json(rows[0]);
   } catch (err) {
@@ -54,23 +72,20 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-// POST /api/books (librarian only)
-router.post('/', requireRole('librarian'), async (req, res, next) => {
+// POST /api/books (ADMIN only)
+router.post('/', requireRole('ADMIN'), async (req, res, next) => {
   try {
-    const {
-      title, author, isbn, category, description,
-      published_year, total_copies = 1, cover_url,
-    } = req.body;
+    const { title, author, isbn, category_id, description } = req.body;
 
     if (!title || !author) {
       return res.status(400).json({ error: 'title and author are required' });
     }
 
     const { rows } = await query(
-      `INSERT INTO books (title, author, isbn, category, description, published_year, total_copies, available_copies, cover_url)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8)
+      `INSERT INTO books (title, author, isbn, category_id, description)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [title, author, isbn, category, description, published_year, total_copies, cover_url],
+      [title, author, isbn, category_id || null, description],
     );
     res.status(201).json(rows[0]);
   } catch (err) {

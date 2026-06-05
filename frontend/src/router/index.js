@@ -11,7 +11,7 @@ const routes = [
   { path: '/login', name: 'login', component: LoginView, meta: { guestOnly: true } },
   { path: '/register', name: 'register', component: RegisterView, meta: { guestOnly: true } },
   { path: '/loans', name: 'loans', component: LoansView, meta: { requiresAuth: true } },
-  { path: '/members', name: 'members', component: MembersView, meta: { requiresAuth: true, role: 'librarian' } },
+  { path: '/members', name: 'members', component: MembersView, meta: { requiresAuth: true, role: 'ADMIN' } },
 ];
 
 const router = createRouter({

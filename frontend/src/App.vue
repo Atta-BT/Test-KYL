@@ -12,7 +12,7 @@
     <div class="user-area">
       <template v-if="auth.isAuthenticated.value">
         <span class="who">
-          {{ auth.state.user.name }}
+          {{ auth.state.user.username }}
           <span class="role-badge">{{ auth.state.user.role }}</span>
         </span>
         <button class="secondary small" @click="logout">Logout</button>

@@ -7,6 +7,7 @@ import authRouter from './routes/auth.js';
 import booksRouter from './routes/books.js';
 import membersRouter from './routes/members.js';
 import loansRouter from './routes/loans.js';
+import reservationsRouter from './routes/reservations.js';
 import { attachUser } from './auth.js';
 
 dotenv.config();
@@ -27,6 +28,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/books', booksRouter);
 app.use('/api/members', membersRouter);
 app.use('/api/loans', loansRouter);
+app.use('/api/reservations', reservationsRouter);
 
 app.use((err, _req, res, _next) => {
   console.error(err);

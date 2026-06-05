@@ -6,8 +6,10 @@
       <select v-model="filter" @change="load">
         <option value="">All loans</option>
         <option value="borrowed">Currently borrowed</option>
-        <option value="returned">Returned</option>
-        <option value="overdue">Overdue</option>
+        <option value="PENDING">Pending</option>
+        <option value="APPROVED">Approved</option>
+        <option value="RETURNED">Returned</option>
+        <option value="OVERDUE">Overdue</option>
       </select>
     </div>
 
@@ -28,27 +30,28 @@
         </tr>
       </thead>
       <tbody>
-        <tr v-for="loan in loans" :key="loan.id">
+        <tr v-for="loan in loans" :key="loan.transaction_id">
           <td>
             <strong>{{ loan.book_title }}</strong><br />
             <span class="muted">{{ loan.book_author }}</span>
           </td>
           <td>{{ loan.member_name }}</td>
-          <td>{{ formatDate(loan.borrowed_at) }}</td>
+          <td>{{ formatDate(loan.borrow_date) }}</td>
           <td>{{ formatDate(loan.due_date) }}</td>
           <td>
-            <span v-if="loan.status === 'returned'" class="badge avail">Returned</span>
+            <span v-if="loan.status === 'RETURNED'" class="badge avail">Returned</span>
+            <span v-else-if="loan.status === 'PENDING'" class="badge">Pending</span>
             <span v-else-if="loan.is_overdue" class="badge overdue">Overdue</span>
-            <span v-else class="badge">Borrowed</span>
+            <span v-else class="badge">Approved</span>
           </td>
           <td>
             <button
-              v-if="loan.status === 'borrowed'"
+              v-if="loan.status === 'APPROVED' || loan.status === 'OVERDUE'"
               class="secondary"
-              :disabled="returningId === loan.id"
+              :disabled="returningId === loan.transaction_id"
               @click="returnBook(loan)"
             >
-              {{ returningId === loan.id ? 'Returning...' : 'Return' }}
+              {{ returningId === loan.transaction_id ? 'Returning...' : 'Return' }}
             </button>
           </td>
         </tr>
@@ -88,9 +91,9 @@ async function load() {
 }
 
 async function returnBook(loan) {
-  returningId.value = loan.id;
+  returningId.value = loan.transaction_id;
   try {
-    await returnLoan(loan.id);
+    await returnLoan(loan.transaction_id);
     await load();
   } catch (e) {
     error.value = e?.response?.data?.error || 'Failed to return book';

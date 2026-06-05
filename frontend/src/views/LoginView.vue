@@ -22,7 +22,7 @@
       </p>
       <div class="demo-box">
         <strong>Demo accounts</strong> (password: <code>password123</code>)
-        <div>Librarian: <code>librarian@example.com</code></div>
+        <div>Admin: <code>admin@example.com</code></div>
         <div>Member: <code>john@example.com</code></div>
       </div>
     </div>

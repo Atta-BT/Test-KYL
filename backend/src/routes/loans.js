@@ -9,37 +9,43 @@ const LOAN_PERIOD_DAYS = 14;
 // Every loan endpoint requires authentication.
 router.use(requireAuth);
 
-// GET /api/loans?status=borrowed|returned&overdue=true
-// Members only see their own loans; librarians see all.
+// GET /api/loans?status=&overdue=true
+// Members only see their own borrowings; ADMIN sees all.
 router.get('/', async (req, res, next) => {
   try {
     const { status, overdue } = req.query;
     const clauses = [];
     const params = [];
 
-    if (req.user.role === 'member') {
-      params.push(req.user.member_id);
-      clauses.push(`l.member_id = $${params.length}`);
+    if (req.user.role === 'MEMBER') {
+      params.push(req.user.id);
+      clauses.push(`b.user_id = $${params.length}`);
     }
 
     if (status) {
-      params.push(status);
-      clauses.push(`l.status = $${params.length}`);
+      if (status === 'borrowed') {
+        clauses.push(`b.status IN ('PENDING', 'APPROVED')`);
+      } else {
+        params.push(status);
+        clauses.push(`b.status = $${params.length}`);
+      }
     }
     if (overdue === 'true') {
-      clauses.push(`l.status = 'borrowed' AND l.due_date < CURRENT_DATE`);
+      clauses.push(`b.status = 'APPROVED' AND b.due_date < CURRENT_TIMESTAMP`);
     }
 
     const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
     const { rows } = await query(
-      `SELECT l.*, b.title AS book_title, b.author AS book_author,
-              m.name AS member_name, m.email AS member_email,
-              (l.status = 'borrowed' AND l.due_date < CURRENT_DATE) AS is_overdue
-       FROM loans l
-       JOIN books b ON b.id = l.book_id
-       JOIN members m ON m.id = l.member_id
+      `SELECT b.transaction_id, b.user_id, b.copy_id, b.borrow_date, b.due_date, b.return_date, b.status,
+              bk.book_id, bk.title AS book_title, bk.author AS book_author,
+              u.username AS member_name, u.email AS member_email,
+              (b.status = 'APPROVED' AND b.due_date < CURRENT_TIMESTAMP) AS is_overdue
+       FROM borrowings b
+       JOIN book_copies bc ON bc.copy_id = b.copy_id
+       JOIN books bk ON bk.book_id = bc.book_id
+       JOIN users u ON u.user_id = b.user_id
        ${where}
-       ORDER BY l.borrowed_at DESC`,
+       ORDER BY b.borrow_date DESC`,
       params,
     );
     res.json(rows);
@@ -48,60 +54,45 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-// POST /api/loans  { book_id, member_id? }  -> borrow a book
-// Members borrow for themselves; librarians may borrow on behalf of a member.
+// POST /api/loans  { book_id }  -> request to borrow a book
+// Finds an available copy and creates a PENDING borrowing.
 router.post('/', async (req, res, next) => {
   const { book_id } = req.body;
   if (!book_id) {
     return res.status(400).json({ error: 'book_id is required' });
   }
 
-  let member_id;
-  if (req.user.role === 'member') {
-    member_id = req.user.member_id;
-    if (!member_id) {
-      return res.status(400).json({ error: 'Your account is not linked to a library member' });
-    }
-  } else {
-    member_id = req.body.member_id;
-    if (!member_id) {
-      return res.status(400).json({ error: 'member_id is required when borrowing on behalf of a member' });
-    }
-  }
+  const user_id = req.user.id;
 
   const client = await getClient();
   try {
     await client.query('BEGIN');
 
-    const bookRes = await client.query(
-      'SELECT * FROM books WHERE id = $1 FOR UPDATE',
+    // Find an available copy
+    const copyRes = await client.query(
+      `SELECT copy_id FROM book_copies
+       WHERE book_id = $1 AND status = 'AVAILABLE'
+       LIMIT 1 FOR UPDATE`,
       [book_id],
     );
-    if (!bookRes.rows.length) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'Book not found' });
-    }
-    if (bookRes.rows[0].available_copies < 1) {
+    if (!copyRes.rows.length) {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'No available copies for this book' });
     }
+    const copy_id = copyRes.rows[0].copy_id;
 
-    const memberRes = await client.query('SELECT id FROM members WHERE id = $1', [member_id]);
-    if (!memberRes.rows.length) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'Member not found' });
-    }
-
+    // Mark copy as borrowed
     await client.query(
-      'UPDATE books SET available_copies = available_copies - 1 WHERE id = $1',
-      [book_id],
+      `UPDATE book_copies SET status = 'BORROWED' WHERE copy_id = $1`,
+      [copy_id],
     );
 
+    // Create borrowing record (PENDING status)
     const loanRes = await client.query(
-      `INSERT INTO loans (book_id, member_id, due_date, status)
-       VALUES ($1, $2, CURRENT_DATE + $3::int, 'borrowed')
+      `INSERT INTO borrowings (user_id, copy_id, borrow_date, due_date, status)
+       VALUES ($1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + ($3 || ' days')::interval, 'PENDING')
        RETURNING *`,
-      [book_id, member_id, LOAN_PERIOD_DAYS],
+      [user_id, copy_id, LOAN_PERIOD_DAYS],
     );
 
     await client.query('COMMIT');
@@ -115,36 +106,38 @@ router.post('/', async (req, res, next) => {
 });
 
 // POST /api/loans/:id/return -> return a borrowed book
-// Members may only return their own loans; librarians may return any.
+// Members may only return their own borrowings; ADMIN may return any.
 router.post('/:id/return', async (req, res, next) => {
   const client = await getClient();
   try {
     await client.query('BEGIN');
 
     const loanRes = await client.query(
-      'SELECT * FROM loans WHERE id = $1 FOR UPDATE',
+      'SELECT * FROM borrowings WHERE transaction_id = $1 FOR UPDATE',
       [req.params.id],
     );
     if (!loanRes.rows.length) {
       await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'Loan not found' });
+      return res.status(404).json({ error: 'Borrowing not found' });
     }
-    if (req.user.role === 'member' && loanRes.rows[0].member_id !== req.user.member_id) {
+    if (req.user.role === 'MEMBER' && loanRes.rows[0].user_id !== req.user.id) {
       await client.query('ROLLBACK');
-      return res.status(403).json({ error: 'You can only return your own loans' });
+      return res.status(403).json({ error: 'You can only return your own borrowings' });
     }
-    if (loanRes.rows[0].status === 'returned') {
+    if (loanRes.rows[0].status === 'RETURNED') {
       await client.query('ROLLBACK');
-      return res.status(409).json({ error: 'This loan was already returned' });
+      return res.status(409).json({ error: 'This borrowing was already returned' });
     }
 
     const updated = await client.query(
-      `UPDATE loans SET status = 'returned', returned_at = now() WHERE id = $1 RETURNING *`,
+      `UPDATE borrowings SET status = 'RETURNED', return_date = CURRENT_TIMESTAMP WHERE transaction_id = $1 RETURNING *`,
       [req.params.id],
     );
+
+    // Mark the copy as available again
     await client.query(
-      'UPDATE books SET available_copies = available_copies + 1 WHERE id = $1',
-      [loanRes.rows[0].book_id],
+      `UPDATE book_copies SET status = 'AVAILABLE' WHERE copy_id = $1`,
+      [loanRes.rows[0].copy_id],
     );
 
     await client.query('COMMIT');

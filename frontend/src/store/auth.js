@@ -11,8 +11,8 @@ const state = reactive({
 export const auth = {
   state,
   isAuthenticated: computed(() => !!state.token),
-  isLibrarian: computed(() => state.user?.role === 'librarian'),
-  isMember: computed(() => state.user?.role === 'member'),
+  isLibrarian: computed(() => state.user?.role === 'ADMIN'),
+  isMember: computed(() => state.user?.role === 'MEMBER'),
 
   setSession(token, user) {
     state.token = token;

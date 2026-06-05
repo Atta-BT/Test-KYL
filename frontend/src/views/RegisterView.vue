@@ -5,16 +5,12 @@
       <p class="muted">Register as a library member.</p>
       <form @submit.prevent="submit">
         <div class="form-row">
-          <label>Name</label>
-          <input v-model="name" type="text" required />
+          <label>Username</label>
+          <input v-model="username" type="text" required />
         </div>
         <div class="form-row">
           <label>Email</label>
           <input v-model="email" type="email" autocomplete="username" required />
-        </div>
-        <div class="form-row">
-          <label>Phone (optional)</label>
-          <input v-model="phone" type="text" />
         </div>
         <div class="form-row">
           <label>Password (min 6 chars)</label>
@@ -40,9 +36,8 @@ import { register } from '../api';
 import { auth } from '../store/auth';
 
 const router = useRouter();
-const name = ref('');
+const username = ref('');
 const email = ref('');
-const phone = ref('');
 const password = ref('');
 const loading = ref(false);
 const error = ref('');
@@ -52,9 +47,8 @@ async function submit() {
   error.value = '';
   try {
     const { token, user } = await register({
-      name: name.value,
+      username: username.value,
       email: email.value,
-      phone: phone.value,
       password: password.value,
     });
     auth.setSession(token, user);

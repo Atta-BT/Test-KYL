@@ -29,16 +29,21 @@ export const register = (payload) => api.post('/auth/register', payload).then((r
 // Books
 export const getBooks = (params) => api.get('/books', { params }).then((r) => r.data);
 export const getBook = (id) => api.get(`/books/${id}`).then((r) => r.data);
-export const getCategories = () => api.get('/books/categories').then((r) => r.data);
+export const getCategories = () => api.get('/books/categories').then((r) => r.data.map((c) => c.name));
 export const createBook = (payload) => api.post('/books', payload).then((r) => r.data);
 
 // Members
 export const getMembers = () => api.get('/members').then((r) => r.data);
 export const createMember = (payload) => api.post('/members', payload).then((r) => r.data);
 
-// Loans
+// Loans / Borrowings
 export const getLoans = (params) => api.get('/loans', { params }).then((r) => r.data);
 export const borrowBook = (payload) => api.post('/loans', payload).then((r) => r.data);
 export const returnLoan = (id) => api.post(`/loans/${id}/return`).then((r) => r.data);
+
+// Reservations
+export const getReservations = (params) => api.get('/reservations', { params }).then((r) => r.data);
+export const createReservation = (payload) => api.post('/reservations', payload).then((r) => r.data);
+export const cancelReservation = (id) => api.patch(`/reservations/${id}/cancel`).then((r) => r.data);
 
 export default api;
